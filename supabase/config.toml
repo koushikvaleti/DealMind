@@ -1,0 +1,4 @@
+project_id = "dealmind"
+
+[functions.deal-ai]
+verify_jwt = true
