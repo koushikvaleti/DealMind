@@ -207,7 +207,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: "Missing dealId" }, 400);
     }
 
-    // RECALL: Fetch long-term memories from Hindsight using isolated memory banks per deal
+    // RECALL: Fetch long-term memories from Hindsight using isolated memory banks per deal (gracefully handling missing banks)
     let hindsightMemoryContext = "";
     try {
       const bankId = `deal-${dealId}`;
@@ -215,8 +215,8 @@ Deno.serve(async (req: Request) => {
       if (recalledMemories && Array.isArray(recalledMemories)) {
         hindsightMemoryContext = recalledMemories.map((m: any) => `- ${m.content || m}`).join("\n");
       }
-    } catch (hindsightErr) {
-      console.error("Hindsight recall warning:", hindsightErr);
+    } catch (hindsightErr: any) {
+      console.log("Hindsight recall note (new bank):", hindsightErr?.message || hindsightErr);
     }
 
     console.log("DEAL-AI: loading deal context");
