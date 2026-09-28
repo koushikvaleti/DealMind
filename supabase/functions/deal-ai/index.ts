@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { HindsightClient } from "npm:@vectorize-io/hindsight-client";
+import { OpenAI } from "npm:openai@4.86.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -103,40 +104,22 @@ async function callLLM(messages: { role: string; content: string }[], maxTokens 
     throw new Error("AI_API_KEY is not configured in Supabase Secrets.");
   }
 
-  const systemMessages = messages.filter((message) => message.role === "system");
-  const contents = messages
-    .filter((message) => message.role !== "system")
-    .map((message) => ({
-      role: message.role === "assistant" ? "model" : "user",
-      parts: [{ text: message.content }],
-    }));
+  // Initialize the OpenAI client pointing to Groq's endpoint
+  const openai = new OpenAI({
+    apiKey: apiKey,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
 
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        ...(systemMessages.length
-          ? { systemInstruction: { parts: systemMessages.map(({ content }) => ({ text: content })) } }
-          : {}),
-        contents,
-        generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens },
-      }),
-    },
-  );
+  const response = await openai.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: messages as any,
+    temperature: 0.4,
+    max_tokens: maxTokens,
+  });
 
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = safeBody(data?.error?.message);
-    console.error(`Gemini API Error details:`, data);
-    throw new Error(`Gemini request failed (${response.status})${message ? `: ${message}` : ""}`);
-  }
-
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const text = response.choices?.[0]?.message?.content;
   if (typeof text !== "string" || !text.trim()) {
-    const reason = safeBody(data?.promptFeedback?.blockReason || data?.candidates?.[0]?.finishReason);
-    throw new Error(`Gemini response did not contain generated text${reason ? ` (${reason})` : ""}`);
+    throw new Error("Groq response did not contain generated text.");
   }
 
   return text;
@@ -207,7 +190,6 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: "Missing dealId" }, 400);
     }
 
-    // RECALL: Fetch long-term memories from Hindsight using isolated memory banks per deal (gracefully handling missing banks)
     let hindsightMemoryContext = "";
     try {
       const bankId = `deal-${dealId}`;
@@ -226,12 +208,10 @@ Deno.serve(async (req: Request) => {
     }
     console.log("DEAL-AI: deal context loaded");
 
-    // Merge Hindsight long-term memory context with base context
     const enhancedContext = `${ctx.context}\n\nHINDSIGHT LONG-TERM MEMORIES:\n${hindsightMemoryContext || "None recorded."}`;
 
     console.log("DEAL-AI: processing action:", action);
     
-    // CHAT: general conversation
     if (action === "chat") {
       if (!question) return jsonResponse({ error: "Missing question" }, 400);
 
@@ -251,7 +231,6 @@ Deno.serve(async (req: Request) => {
       await supabase.from("conversations").insert({ deal_id: dealId, user_id: userId, role: "assistant", message: answer });
       await supabase.from("deal_activities").insert({ deal_id: dealId, user_id: userId, activity_type: "ai_conversation", description: "AI agent conversation" });
 
-      // RETAIN: Push interaction into Hindsight for long-term memory learning
       try {
         await hindsight.retain(`deal-${dealId}`, `User asked: "${question}". Assistant answered: "${answer}"`, {
           context: "Deal intelligence chat session",
@@ -261,7 +240,6 @@ Deno.serve(async (req: Request) => {
         console.error("Hindsight retain warning:", retainErr);
       }
 
-      // Best-effort local memory extraction
       try {
         const memoryResponse = await callLLM([
           { role: "system", content: MEMORY_PROMPT },
@@ -280,7 +258,6 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ answer });
     }
 
-    // MEETING PREP: structured preparation brief
     if (action === "meeting-prep") {
       const messages = [
         { role: "system", content: MEETING_PREP_PROMPT },
@@ -302,7 +279,6 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ answer });
     }
 
-    // RISK ANALYSIS: structured risk assessment
     if (action === "risk-analysis") {
       const messages = [
         { role: "system", content: RISK_ANALYSIS_PROMPT },
@@ -326,7 +302,6 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ risks: risks.length ? risks : [{ risk: "No risks identified", level: "Low", explanation: "Unable to parse risk analysis." }] });
     }
 
-    // INSIGHTS: generate and store deal intelligence
     if (action === "insights") {
       const messages = [
         { role: "system", content: INSIGHTS_PROMPT },
@@ -343,7 +318,6 @@ Deno.serve(async (req: Request) => {
 
       const parsed = parseJsonArray(answer) as { type: string; title: string; description: string }[];
 
-      // Clear old AI-generated insights and store new ones
       await supabase.from("insights").delete().eq("deal_id", dealId).eq("source", "ai");
       if (parsed.length) {
         await supabase.from("insights").insert(
