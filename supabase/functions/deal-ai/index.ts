@@ -104,14 +104,14 @@ async function callLLM(messages: { role: string; content: string }[], maxTokens 
     throw new Error("AI_API_KEY is not configured in Supabase Secrets.");
   }
 
-  // Initialize the OpenAI client pointing to Groq's endpoint
+  // Initialize the OpenAI client pointing to Groq's endpoint with the active model
   const openai = new OpenAI({
     apiKey: apiKey,
     baseURL: "https://api.groq.com/openai/v1",
   });
 
   const response = await openai.chat.completions.create({
-    model: "llama-3.1-8b-instant",
+    model: "llama3-70b-8192",
     messages: messages as any,
     temperature: 0.4,
     max_tokens: maxTokens,
