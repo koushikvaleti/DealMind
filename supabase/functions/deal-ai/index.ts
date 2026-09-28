@@ -111,7 +111,7 @@ async function callLLM(messages: { role: string; content: string }[], maxTokens 
   });
 
   const response = await openai.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: "llama-3.1-8b-instant",
     messages: messages as any,
     temperature: 0.4,
     max_tokens: maxTokens,
