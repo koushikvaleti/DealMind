@@ -111,7 +111,7 @@ async function callLLM(messages: { role: string; content: string }[], maxTokens 
   });
 
   const response = await openai.chat.completions.create({
-    model: "llama3-70b-8192",
+    model: "llama-3.3-70b-versatile", // Updated to current active Groq production model
     messages: messages as any,
     temperature: 0.4,
     max_tokens: maxTokens,
