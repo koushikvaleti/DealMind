@@ -104,25 +104,30 @@ async function callLLM(messages: { role: string; content: string }[], maxTokens 
     throw new Error("AI_API_KEY is not configured in Supabase Secrets.");
   }
 
-  // Initialize the OpenAI client pointing to Groq's endpoint with the active model
+  // Initialize the OpenAI client pointing to Groq's endpoint with the recommended model
   const openai = new OpenAI({
     apiKey: apiKey,
     baseURL: "https://api.groq.com/openai/v1",
   });
 
-  const response = await openai.chat.completions.create({
-    model: "llama-3.3-70b-versatile", // Updated to current active Groq production model
-    messages: messages as any,
-    temperature: 0.4,
-    max_tokens: maxTokens,
-  });
+  try {
+    const response = await openai.chat.completions.create({
+      model: "openai/gpt-oss-120b",
+      messages: messages as any,
+      temperature: 0.4,
+      max_tokens: maxTokens,
+    });
 
-  const text = response.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || !text.trim()) {
-    throw new Error("Groq response did not contain generated text.");
+    const text = response.choices?.[0]?.message?.content;
+    if (typeof text !== "string" || !text.trim()) {
+      throw new Error("Groq response did not contain generated text.");
+    }
+
+    return text;
+  } catch (error: any) {
+    console.error("Groq API / Function Calling Error:", error?.message || error);
+    throw new Error(`AI processing error: ${error?.message || "Unknown model error"}`);
   }
-
-  return text;
 }
 
 async function loadDealContext(supabase: ReturnType<typeof createClient>, dealId: string, userId: string) {
